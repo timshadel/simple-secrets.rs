@@ -1,0 +1,11 @@
+[package]
+name = "simple-secrets"
+version = "0.1.0"
+authors = ["Tim Shadel <tim@shadelsoftware.com>"]
+edition = "2018"
+
+[dependencies]
+data-encoding = "^2.1.2"
+rand = "^0.6"
+rmp = "^0.8"
+rust-crypto = "^0.2"

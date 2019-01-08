@@ -1,14 +1,5 @@
-//
-// External dependencies.
-//
-
-extern crate crypto;
-extern crate data_encoding;
-extern crate rand;
-
-
 ///
-/// Expose primitives as the module.
+/// Expose primitives.
 ///
 /// WARNING: Using any of these primitives in isolation could be Bad. Take cautious.
 ///
@@ -26,12 +17,15 @@ use crypto::symmetriccipher::SymmetricCipherError;
 use data_encoding::{ BASE64URL_NOPAD, DecodeError, DecodeKind };
 use rand::RngCore;
 use rand::rngs::OsRng;
+use rmp_serde::{ Deserializer, Serializer };
+use serde::{ Deserialize, Serialize };
 
 
 pub enum SimpleError {
     InvalidLength,
     InvalidPadding,
     InvalidSymbol,
+    EncodingError,
 }
 
 impl std::fmt::Debug for SimpleError {
@@ -205,6 +199,40 @@ pub fn binify(string: &[u8]) -> Result<Vec<u8>, SimpleError> {
 /// Uses base64url encoding.
 pub fn stringify(data: &[u8]) -> String {
     BASE64URL_NOPAD.encode(data)
+}
+
+/// Turn a Rust type into a binary representation
+/// suitable for use in crypto functions. This object will
+/// possibly be deserialized in a different programming
+/// environment—it should be representable in a JSON-like
+/// in structure.
+///
+/// Uses serde for serialization into MsgPack format.
+pub fn serialize<T: ?Sized>(value: &T) -> Result<Vec<u8>, SimpleError> where T: Serialize {
+    let mut buf = Vec::<u8>::new();
+    value.serialize(&mut Serializer::new(&mut buf)).unwrap();
+    Ok(buf)
+}
+
+
+/// Turn a binary representation into a JavaScript object
+/// suitable for use in application logic. This object
+/// possibly originated in a different programming
+/// environment—it should be JSON-like in structure.
+///
+/// Uses serde for deserialization from MsgPack format.
+pub fn deserialize<'a, T>(v: &'a [u8]) -> Result<T, SimpleError> where T: Deserialize<'a>, {
+    let mut de = Deserializer::new(v);
+    let value = Deserialize::deserialize(&mut de).unwrap();
+    Ok(value)
+}
+
+/// Overwrite the contents of the buffer with zeroes.
+/// This is critical for removing sensitive data from memory.
+pub fn zero(buf: &mut [u8]) {
+    for i in 0..buf.len() {
+        buf[i] = 0;
+    }
 }
 
 
@@ -385,6 +413,38 @@ mod tests {
         let data = [0x32; 10];
         let val = stringify(&data);
         assert_eq!(val, "MjIyMjIyMjIyMg");
+    }
+
+    #[test]
+    fn it_should_serialize_and_deserialize_simple_types() {
+        let num = 1;
+        let text = "abcd";
+        let arr = [0x32; 10];
+
+        let binary = serialize(&num).unwrap();
+        let actual: i32 = deserialize(&binary).unwrap();
+        assert_eq!(1, actual);
+        let binary = serialize(&text).unwrap();
+        let actual: String = deserialize(&binary).unwrap();
+        assert_eq!("abcd", actual);
+        let binary = serialize(&arr).unwrap();
+        let actual: [i32; 10] = deserialize(&binary).unwrap();
+        assert_eq!([0x32; 10], actual);
+    }
+
+    #[test]
+    fn it_zeros_buffers() {
+        let mut b = [74, 68, 69, 73, 20, 69, 73, 20, 73, 0x6f, 0x6d, 65];
+        let z = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+        let bStr = HEXLOWER.encode(&b);
+        let zStr = HEXLOWER.encode(&z);
+        assert_ne!(bStr, zStr);
+
+        zero(&mut b[..]);
+        let bStr = HEXLOWER.encode(&b);
+
+        assert_eq!(bStr, zStr);
     }
 
 }

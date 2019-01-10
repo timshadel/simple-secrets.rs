@@ -14,7 +14,7 @@ use crypto::hmac::Hmac;
 use crypto::mac::Mac;
 use crypto::sha2::Sha256;
 use crypto::symmetriccipher::SymmetricCipherError;
-use data_encoding::{ BASE64URL_NOPAD, DecodeError, DecodeKind };
+use data_encoding::{ BASE64URL_NOPAD, DecodeError, DecodeKind, DecodePartial };
 use rand::RngCore;
 use rand::rngs::OsRng;
 use rmp_serde::{ Deserializer, Serializer };
@@ -215,7 +215,7 @@ pub fn serialize<T: ?Sized>(value: &T) -> Result<Vec<u8>, SimpleError> where T: 
 }
 
 
-/// Turn a binary representation into a JavaScript object
+/// Turn a binary representation into a Rust structure
 /// suitable for use in application logic. This object
 /// possibly originated in a different programming
 /// environment—it should be JSON-like in structure.
@@ -271,12 +271,18 @@ fn map_decode_error(err: DecodeError) -> SimpleError {
 }
 
 // Map dependency errors to SimpleError
+pub fn map_decode_partial(partial: DecodePartial) -> SimpleError {
+    map_decode_error(partial.error)
+}
+
+// Map dependency errors to SimpleError
 fn map_crypto_error(err: SymmetricCipherError) -> SimpleError {
     match err {
         InvalidLength => SimpleError::InvalidLength,
         InvalidPadding => SimpleError::InvalidPadding
     }
 }
+
 
 
 //

@@ -23,17 +23,22 @@ use serde::{ Deserialize, Serialize };
 
 pub enum SimpleError {
     InvalidLength,
+    InvalidMAC,
     InvalidPadding,
     InvalidSymbol,
     EncodingError,
+    UnknownKey,
 }
 
 impl std::fmt::Debug for SimpleError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             InvalidLength => write!(f, "Invalid length"),
+            InvalidMAC => write!(f, "Invalid message authentication code"),
             InvalidPadding => write!(f, "Invalid padding"),
             InvalidSymbol => write!(f, "Invalid symbol"),
+            EncodingError => write!(f, "Encoding error"),
+            UnknownKey => write!(f, "Unknown key"),
         }
     }
 }
@@ -237,12 +242,41 @@ pub fn zero(buf: &mut [u8]) {
 
 
 //
+// Public Traits
+//
+
+pub trait ASCIIData {
+    fn to_ascii_u8(&self) -> Vec<u8>;
+}
+
+impl ASCIIData for String {
+
+    fn to_ascii_u8(&self) -> Vec<u8> {
+        self.chars()
+            .map(|c| c as u8)
+            .collect::<Vec<_>>()
+    }
+
+}
+
+impl ASCIIData for str {
+
+    fn to_ascii_u8(&self) -> Vec<u8> {
+        self.chars()
+            .map(|c| c as u8)
+            .collect::<Vec<_>>()
+    }
+    
+}
+
+
+//
 // Private functions
 //
 
 /// Generate an encryption or hmac key from the master key and role.
 fn derive(master_key: [u8; 32], role: &str) -> [u8; 32] {
-    let role = str_to_ascii(role);
+    let role = role.to_ascii_u8();
     let mut hash = Sha256::new();
     hash.input(&master_key);
     hash.input(&role);
@@ -250,15 +284,6 @@ fn derive(master_key: [u8; 32], role: &str) -> [u8; 32] {
     hash.result(&mut result);
     return result;
 }
-
-// Use plain ASCII byte values, since Unicode codepoints match ASCII
-fn str_to_ascii(hex_input: &str) -> Vec<u8> {
-    let char_vec: Vec<_> = hex_input.chars().collect();
-    char_vec.chunks(1).map(|c| {
-        c[0] as u8
-    }).collect()
-}
-
 
 // Map dependency errors to SimpleError
 fn map_decode_error(err: DecodeError) -> SimpleError {
@@ -362,8 +387,8 @@ mod tests {
         let key = [0xcd; 32];
         let plaintext = [0x11; 25];
         let mut iv: [u8; 16] = [0; 16];
-        let ivBytes = HEXLOWER.decode(b"d4a5794c81015dde3b9b0648f2b9f5b9").unwrap();
-        iv.copy_from_slice(&ivBytes);
+        let iv_bytes = HEXLOWER.decode(b"d4a5794c81015dde3b9b0648f2b9f5b9").unwrap();
+        iv.copy_from_slice(&iv_bytes);
         let ciphertext = b"cb7f804ec83617144aa261f24af07023a91a3864601a666edea98938f2702dbc";
         let ciphertext = HEXLOWER.decode(ciphertext).unwrap();
         let recovered = decrypt(&ciphertext, key, iv).unwrap();

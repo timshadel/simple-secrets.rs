@@ -1,10 +1,11 @@
 
 ///
-/// Module dependencies.
+/// Module dependencies
 ///
 
 mod primitives;
 
+use crate::primitives::{ ASCIIData, SimpleError };
 use data_encoding::HEXLOWER_PERMISSIVE;
 use serde::{ Deserialize, Serialize };
 
@@ -17,15 +18,12 @@ pub struct Packet {
     master_key: [u8; 32]
 }
 
-pub fn packet(master: String) -> Result<Packet, primitives::SimpleError> {
+pub fn packet(master: String) -> Result<Packet, SimpleError> {
     let mut key: [u8; 32] = [0; 32];
-    let master = master.to_ascii_lowercase()
-                    .chars()
-                    .map(|c| c as u8)
-                    .collect::<Vec<_>>();
+    let master = master.to_ascii_u8();
     let length = HEXLOWER_PERMISSIVE.decode_mut(&master, &mut key).map_err(primitives::map_decode_partial)?;
     if length != 32 {
-        return Err(primitives::SimpleError::InvalidLength)
+        return Err(SimpleError::InvalidLength)
     }
     Ok(Packet { master_key: key })
 }
@@ -40,7 +38,7 @@ impl Packet {
     /// Turn a Rust type into an encrypted packet. This object will
     /// possibly be deserialized in a different programming
     /// environment—it should be JSON-like in structure.
-    pub fn pack<T: ?Sized>(&self, value: &T) -> Result<String, primitives::SimpleError> where T: Serialize {
+    pub fn pack<T: ?Sized>(&self, value: &T) -> Result<String, SimpleError> where T: Serialize {
         let mut data = primitives::serialize(value)?;
         let mut body = self.encrypt_body(&mut data)?;
         let mut packet = self.authenticate(&mut body);
@@ -53,8 +51,11 @@ impl Packet {
     /// Turn an encrypted packet into a Rust structure. This
     /// object possibly originated in a different programming
     /// environment—it should be JSON-like in structure.
-    pub fn deserialize<'a, T>(&self, packet: String) -> Result<T, primitives::SimpleError> where T: Deserialize<'a> {
-        Err(primitives::SimpleError::EncodingError)
+    pub fn unpack<'a, T>(&self, websafe: String) -> Result<T, SimpleError> where T: Deserialize<'a> {
+        let packet = primitives::binify(&websafe.to_ascii_u8())?;
+        let cipherdata = self.verify(&packet[..])?;
+
+        Err(SimpleError::EncodingError)
     }
 
 }
@@ -66,7 +67,7 @@ impl Packet {
 
 impl Packet {
 
-    fn encrypt_body(&self, data: &mut [u8]) -> Result<Vec<u8>, primitives::SimpleError> {
+    fn encrypt_body(&self, data: &mut [u8]) -> Result<Vec<u8>, SimpleError> {
         let mut nonce = primitives::nonce();
         let mut body = [&nonce[..], &data[..]].concat();
         let mut key = primitives::derive_sender_key(self.master_key);
@@ -82,7 +83,7 @@ impl Packet {
 
     fn authenticate(&self, data: &mut [u8]) -> Vec<u8> {
         let id = primitives::identify(&self.master_key);
-        let mut auth = [&id[..], &data[..]].concat();
+        let auth = [&id[..], &data[..]].concat();
         let mut hmac_key = primitives::derive_sender_hmac(self.master_key);
 
         let mut mac = primitives::mac(&auth, hmac_key);
@@ -97,6 +98,32 @@ impl Packet {
         packet
     }
 
+    /// Verify the given data from the embedded message authentication code.
+    ///
+    /// Uses HMAC-SHA256.
+    fn verify(&self, data: &[u8]) -> Result<Vec<u8>, SimpleError> {
+        let key_id = primitives::identify(&self.master_key);
+        if !primitives::compare(&key_id, &data[0..6]) {
+            return Err(SimpleError::UnknownKey)
+        }
+        let mac_offset = data.len() - 32;
+        if mac_offset <= 0 {
+            return Err(SimpleError::InvalidLength)
+        }
+        let body = &data[0..mac_offset];
+        let packet_mac = &data[mac_offset..];
+        let hmac_key = primitives::derive_sender_hmac(self.master_key);
+        let mac = primitives::mac(body, hmac_key);
+        if !primitives::compare(packet_mac, &mac) {
+            return Err(SimpleError::InvalidMAC)
+        }
+        let mut value = Vec::<u8>::new();
+        // value.extend(&mac);
+        value.extend(&body[6..]);
+        Ok(value)
+    }
+
+
 }
 
 impl Drop for Packet {
@@ -109,6 +136,7 @@ impl Drop for Packet {
 }
 
 
+
 //
 // Module Tests
 //
@@ -117,9 +145,12 @@ impl Drop for Packet {
 mod tests {
 
     use super::*;
+    use data_encoding::HEXLOWER;
+
 
     #[test]
-    fn it_should_accept_64char_hex() -> Result<(), primitives::SimpleError> {
+    #[allow(unused_variables)]
+    fn it_should_accept_64char_hex() -> Result<(), SimpleError> {
         let key = [0xbc; 32];
         let hex = HEXLOWER_PERMISSIVE.encode(&key);
         let packet = packet(hex)?;
@@ -128,8 +159,14 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn it_should_only_accept_64char_hex() {
+    fn it_should_only_accept_hex() {
         packet(String::from("not-a-hex-string")).unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn it_should_only_accept_64char_hex() {
+        packet(String::from("1dad")).unwrap();
     }
 
     #[test]
@@ -142,6 +179,32 @@ mod tests {
             let is_base64_url = is_base64_url || ('0' <= c && c <= '9') || c == '-' || c == '_';
             assert!(is_base64_url, "Character is not base64url: {} at {} in {}", c, i, p);
         }
+    }
+
+    #[test]
+    fn it_should_create_a_message_authentication_code() {
+        let key = [0x9f; 32];
+        let mut data = [0x11; 25];
+        let sender = Packet { master_key: key };
+        let packet = sender.authenticate(&mut data);
+        let packet = HEXLOWER.encode(&packet);
+        let expected = "63859a62011a".to_owned() + 
+                "11111111111111111111111111111111111111111111111111" + 
+                "ab284d107b0824901279f6bca8843be53175f20de633dd84c6610021b8b52824";
+        assert_eq!(packet, expected);
+    }
+
+    #[test]
+    fn it_should_verify_a_message_authentication_code() {
+        let sender = Packet { master_key: [0x9f; 32] };
+        let packet = "63859a62011a".to_owned() + 
+                "11111111111111111111111111111111111111111111111111" + 
+                "ab284d107b0824901279f6bca8843be53175f20de633dd84c6610021b8b52824";
+        let packet = HEXLOWER.decode(&packet.to_ascii_u8()).unwrap();
+
+        let data = sender.verify(&packet).unwrap();
+        let data = HEXLOWER.encode(&data);
+        assert_eq!(data, "11111111111111111111111111111111111111111111111111");
     }
 
 }

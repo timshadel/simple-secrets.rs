@@ -53,9 +53,9 @@ impl Packet {
     /// environment—it should be JSON-like in structure.
     pub fn unpack<'a, T>(&self, websafe: String) -> Result<T, SimpleError> where T: Deserialize<'a> {
         let packet = primitives::binify(&websafe.to_ascii_u8())?;
-        let cipherdata = self.verify(&packet[..])?;
-
-        Err(SimpleError::EncodingError)
+        let mut cipherdata = self.verify(&packet[..])?;
+        let body = self.decrypt_body(&mut cipherdata[..])?;
+        primitives::deserialize(&body)
     }
 
 }
@@ -79,6 +79,23 @@ impl Packet {
         primitives::zero(&mut key);
         
         Ok(cipherdata)
+    }
+
+    fn decrypt_body(&self, data: &mut [u8]) -> Result<Vec<u8>, SimpleError> {
+        let mut iv: [u8; 16] = [0; 16];
+        iv.copy_from_slice(&data[0..16]);
+        let encrypted = &data[16..];
+        let mut key = primitives::derive_sender_key(self.master_key);
+
+        let mut nonce_with_body = primitives::decrypt(&encrypted, key, iv)?;
+        let mut body = Vec::<u8>::new();
+        body.extend(&nonce_with_body[16..]);
+        primitives::zero(data);
+        primitives::zero(&mut iv);
+        primitives::zero(&mut key);
+        primitives::zero(&mut nonce_with_body);
+
+        Ok(body)
     }
 
     fn authenticate(&self, data: &mut [u8]) -> Vec<u8> {
@@ -205,6 +222,36 @@ mod tests {
         let data = sender.verify(&packet).unwrap();
         let data = HEXLOWER.encode(&data);
         assert_eq!(data, "11111111111111111111111111111111111111111111111111");
+    }
+
+    #[test]
+    fn it_should_have_recoverable_ciphertext() -> Result<(), SimpleError> {
+        let sender = Packet { master_key: [0xbc; 32] };
+        let packet = sender.pack("this is a secret message")?;
+        let result: String = sender.unpack(packet)?;
+        assert_eq!(result, "this is a secret message");
+        Ok(())
+    }
+
+    #[test]
+    #[should_panic]
+    fn it_should_not_be_recoverable_with_a_different_key() {
+        let sender = Packet { master_key: [0xbc; 32] };
+        let packet = sender.pack("this is a secret message").unwrap();
+
+        let sender = Packet { master_key: [0xcb; 32] };
+        let result: String = sender.unpack(packet).unwrap();
+        assert_ne!(result, "this is a secret message");
+    }
+
+    #[test]
+    fn it_should_recover_full_objects() -> Result<(), SimpleError> {
+        let sender = Packet { master_key: [0xbc; 32] };
+        let body = vec![String::from("this"), String::from("is a secret")];
+        let packet = sender.pack(&body)?;
+        let result: Vec<String> = sender.unpack(packet)?;
+        assert_eq!(result, [String::from("this"), String::from("is a secret")]);
+        Ok(())
     }
 
 }

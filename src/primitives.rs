@@ -226,7 +226,7 @@ pub fn serialize<T: ?Sized>(value: &T) -> Result<Vec<u8>, SimpleError> where T: 
 /// environment—it should be JSON-like in structure.
 ///
 /// Uses serde for deserialization from MsgPack format.
-pub fn deserialize<'a, T>(v: &'a [u8]) -> Result<T, SimpleError> where T: Deserialize<'a>, {
+pub fn deserialize<'a, 'b, T>(v: &'a [u8]) -> Result<T, SimpleError> where T: Deserialize<'b>, {
     let mut de = Deserializer::new(v);
     let value = Deserialize::deserialize(&mut de).unwrap();
     Ok(value)

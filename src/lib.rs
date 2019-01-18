@@ -255,3 +255,51 @@ mod tests {
     }
 
 }
+
+
+#[cfg(test)]
+mod compatibility_tests {
+
+    use super::*;
+    use data_encoding::HEXLOWER;
+
+    fn master_key() -> [u8; 32] {
+        let mut key: [u8; 32] = [0; 32];
+        let key_bytes = b"eda00b0f46f6518d4c77944480a0b9b0a7314ad45e124521e490263c2ea217ad";
+        let key_bytes = HEXLOWER.decode(key_bytes).unwrap();
+        key.copy_from_slice(&key_bytes);
+        key
+    }
+
+    #[test]
+    #[ignore]
+    // TODO: when we can fake the IV and nonce
+    fn it_should_create_strings_from_packets() -> Result<(), SimpleError> {
+        let message = "This is the simple-secrets compatibility standard string.";
+        let websafe_msgpack5 = String::from("W7l1PJaffzMzIzzpI1hg75AubQ_PNSjEUycoH1Z7GEwonPVW7yNp54eHe8KRY2JqOo9H8bi3Hnm4G0-r5SNlXXhIW9S99qTxTwibKW7mLkaNMTeZ1ktDwx-4sjCpCnXPIyZe7-l6-o6XjIqazRdhGD6AH5ZS9UFqLpaqIowSUQ9CeiQeFBQ");
+
+        let sender = Packet { master_key: master_key() };
+        let packet = sender.pack(message)?;
+        assert_eq!(packet, websafe_msgpack5);
+        Ok(())
+    }
+
+    #[test]
+    fn it_should_recover_strings_from_packets() -> Result<(), SimpleError> {
+        let message = "This is the simple-secrets compatibility standard string.";
+        let websafe_msgpack1 = String::from("W7l1PJaffzMzIzzpI1hg75AubQ_PNSjEUycoH1Z7GEwonPVW7yMqhBNKylbt-R7lByBe6fmIZdLIH2C2BPyYOtA-z2oGxclL_nZ0Ylo8e_gkf3bXzMn04l61i4dRsVCMJ5pL72suwuJMURy81n73eZEu2ASoVqSSVsnJo9WODLLmvsF_Mu0");
+        let websafe_msgpack5 = String::from("W7l1PJaffzMzIzzpI1hg75AubQ_PNSjEUycoH1Z7GEwonPVW7yNp54eHe8KRY2JqOo9H8bi3Hnm4G0-r5SNlXXhIW9S99qTxTwibKW7mLkaNMTeZ1ktDwx-4sjCpCnXPIyZe7-l6-o6XjIqazRdhGD6AH5ZS9UFqLpaqIowSUQ9CeiQeFBQ");
+
+        let sender = Packet { master_key: master_key() };
+        // TODO: when we can fake the IV and nonce
+        // let packet = sender.pack(message)?;
+        // assert_eq!(packet, websafe_msgpack5);
+
+        let output: String = sender.unpack(websafe_msgpack1)?;
+        assert_eq!(output, message);
+        let output: String = sender.unpack(websafe_msgpack5)?;
+        assert_eq!(output, message);
+        Ok(())
+    }
+
+}

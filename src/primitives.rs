@@ -33,12 +33,12 @@ pub enum SimpleError {
 impl std::fmt::Debug for SimpleError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            InvalidLength => write!(f, "Invalid length"),
-            InvalidMAC => write!(f, "Invalid message authentication code"),
-            InvalidPadding => write!(f, "Invalid padding"),
-            InvalidSymbol => write!(f, "Invalid symbol"),
-            EncodingError => write!(f, "Encoding error"),
-            UnknownKey => write!(f, "Unknown key"),
+            SimpleError::InvalidLength => write!(f, "Invalid length"),
+            SimpleError::InvalidMAC => write!(f, "Invalid message authentication code"),
+            SimpleError::InvalidPadding => write!(f, "Invalid padding"),
+            SimpleError::InvalidSymbol => write!(f, "Invalid symbol"),
+            SimpleError::EncodingError => write!(f, "Encoding error"),
+            SimpleError::UnknownKey => write!(f, "Unknown key"),
         }
     }
 }
@@ -76,6 +76,7 @@ pub fn derive_sender_key(master_key: [u8; 32]) -> [u8; 32] {
 /// the channel's Receiver side.
 ///
 /// Uses the ASCII string 'simple-crypto/receiver-hmac-key' as the role.
+#[allow(dead_code)]
 pub fn derive_receiver_hmac(master_key: [u8; 32]) -> [u8; 32] {
     return derive(master_key, "simple-crypto/receiver-hmac-key");
 }
@@ -84,6 +85,7 @@ pub fn derive_receiver_hmac(master_key: [u8; 32]) -> [u8; 32] {
 /// the channel's Receiver side.
 ///
 /// Uses the ASCII string 'simple-crypto/receiver-cipher-key' as the role.
+#[allow(dead_code)]
 pub fn derive_receiver_key(master_key: [u8; 32]) -> [u8; 32] {
     return derive(master_key, "simple-crypto/receiver-cipher-key");
 }
@@ -91,8 +93,8 @@ pub fn derive_receiver_key(master_key: [u8; 32]) -> [u8; 32] {
 /// Encrypt buffer with the given key.
 ///
 /// Uses AES256 with a random 128-bit initialization vector.
-pub fn encrypt(data: &[u8], key: [u8; 32]) -> Result<Vec<u8>, SimpleError> {
-    let iv = nonce();
+pub fn encrypt(data: &[u8], key: [u8; 32], iv: Option<[u8; 16]>) -> Result<Vec<u8>, SimpleError> {
+    let iv = iv.unwrap_or(nonce());
     let mut encryptor = aes::cbc_encryptor(aes::KeySize::KeySize256, &key,
         &iv, blockmodes::PkcsPadding);
 
@@ -102,11 +104,7 @@ pub fn encrypt(data: &[u8], key: [u8; 32]) -> Result<Vec<u8>, SimpleError> {
     let mut write_buffer = buffer::RefWriteBuffer::new(&mut buffer);
 
     loop {
-        let result = encryptor.encrypt(&mut read_buffer, &mut write_buffer, true);
-        let result = match result {
-            Ok(result) => result,
-            Err(err) => return Err(map_crypto_error(err))
-        };
+        let result = encryptor.encrypt(&mut read_buffer, &mut write_buffer, true)?;
         ciphertext.extend(write_buffer.take_read_buffer().take_remaining().iter().map(|&i| i));
         match result {
             BufferResult::BufferUnderflow => break,
@@ -129,11 +127,7 @@ pub fn decrypt(data: &[u8], key: [u8; 32], iv: [u8; 16]) -> Result<Vec<u8>, Simp
     let mut write_buffer = buffer::RefWriteBuffer::new(&mut buffer);
 
     loop {
-        let result = decryptor.decrypt(&mut read_buffer, &mut write_buffer, true);
-        let result = match result {
-            Ok(result) => result,
-            Err(err) => return Err(map_crypto_error(err))
-        };
+        let result = decryptor.decrypt(&mut read_buffer, &mut write_buffer, true)?;
         final_result.extend(write_buffer.take_read_buffer().take_remaining().iter().map(|&i| i));
         match result {
             BufferResult::BufferUnderflow => break,
@@ -192,11 +186,7 @@ pub fn compare(a: &[u8], b: &[u8]) -> bool {
 ///
 /// Uses base64url encoding.
 pub fn binify(string: &[u8]) -> Result<Vec<u8>, SimpleError> {
-    let result = BASE64URL_NOPAD.decode(string);
-    match result {
-        Ok(value) => Ok(value),
-        Err(err) => Err(map_decode_error(err))
-    }
+    Ok(BASE64URL_NOPAD.decode(string)?)
 }
 
 /// Turn a binary buffer into a websafe string.
@@ -285,29 +275,37 @@ fn derive(master_key: [u8; 32], role: &str) -> [u8; 32] {
     return result;
 }
 
-// Map dependency errors to SimpleError
-fn map_decode_error(err: DecodeError) -> SimpleError {
-    match err.kind {
-        DecodeKind::Length => SimpleError::InvalidLength,
-        DecodeKind::Symbol => SimpleError::InvalidSymbol,
-        DecodeKind::Trailing => SimpleError::InvalidPadding,
-        DecodeKind::Padding => SimpleError::InvalidPadding
+impl From<DecodeError> for SimpleError {
+
+    fn from(err: DecodeError) -> Self {
+        match err.kind {
+            DecodeKind::Length => SimpleError::InvalidLength,
+            DecodeKind::Symbol => SimpleError::InvalidSymbol,
+            DecodeKind::Trailing => SimpleError::InvalidPadding,
+            DecodeKind::Padding => SimpleError::InvalidPadding
+        }
     }
+
 }
 
-// Map dependency errors to SimpleError
-pub fn map_decode_partial(partial: DecodePartial) -> SimpleError {
-    map_decode_error(partial.error)
-}
+impl From<DecodePartial> for SimpleError {
 
-// Map dependency errors to SimpleError
-fn map_crypto_error(err: SymmetricCipherError) -> SimpleError {
-    match err {
-        InvalidLength => SimpleError::InvalidLength,
-        InvalidPadding => SimpleError::InvalidPadding
+    fn from(partial: DecodePartial) -> Self {
+        SimpleError::from(partial.error)
     }
+
 }
 
+impl From<SymmetricCipherError> for SimpleError {
+
+    fn from(err: SymmetricCipherError) -> Self {
+        match err {
+            SymmetricCipherError::InvalidLength => SimpleError::InvalidLength,
+            SymmetricCipherError::InvalidPadding => SimpleError::InvalidPadding
+        }
+    }
+
+}
 
 
 //
@@ -367,7 +365,7 @@ mod tests {
     fn it_should_encrypt_data() {
         let key = [0xcd; 32];
         let plaintext = [0x11; 25];
-        let output = encrypt(&plaintext, key).unwrap();
+        let output = encrypt(&plaintext, key, None).unwrap();
 
         // 16-byte IV, 32 bytes to encrypt the 25 data bytes
         assert_eq!(48, output.len());

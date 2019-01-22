@@ -1,7 +1,7 @@
 [package]
 name = "simple-secrets"
 version = "0.1.0"
-authors = ["Tim Shadel <tim@shadelsoftware.com>"]
+authors = ["Tim Shadel <tim@daylogger.com>"]
 edition = "2018"
 
 [dependencies]

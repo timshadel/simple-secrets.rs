@@ -29,7 +29,7 @@ pub enum SimpleSecretsError {
     /// There was a problem decoding text data into bytes.
     /// Examples include the hex master key or the websafe packet values.
     #[fail(display = "The data for the {} could not be understood.", _0)]
-    TextDecodingError(&'static str, #[cause] DecodeError),
+    TextDecodingError(&'static str, #[fail(cause)] DecodeError),
 
     /// The data is has been corrupted to the point where it is unrecoverable.
     #[fail(display = "The packet has been corrupted because {}.", _0)]
@@ -37,7 +37,7 @@ pub enum SimpleSecretsError {
 
     /// The data was verified and decrypted, but could not be deserialized into a Rust data type.
     #[fail(display = "The data was successfully decrypted, but could not be understood by this program.")]
-    DeserializingError(#[cause] rmp_serde::decode::Error),
+    DeserializingError(#[fail(cause)] rmp_serde::decode::Error),
 
     /// The master key data must contain exactly 32 bytes, but it did not.
     #[fail(display = "The master key must contain 32 bytes to make a 256-bit key. Found {} bytes.", _0)]
@@ -45,11 +45,11 @@ pub enum SimpleSecretsError {
 
     /// The system's source of secure randomness is not available for use.
     #[fail(display = "The is not ready to encrypt data.")]
-    RandomSourceUnavailable(#[cause] rand::Error),
+    RandomSourceUnavailable(#[fail(cause)] rand::Error),
 
     /// The Rust data type could not be prepared for encryption by serializing it into bytes.
     #[fail(display = "The data used in this program could not be converted to a form suitable for encryption.")]
-    SerializingError(#[cause] rmp_serde::encode::Error),
+    SerializingError(#[fail(cause)] rmp_serde::encode::Error),
 
     /// The packet was encrypted with a another key.
     #[fail(display = "The packet is encrypted with a different key ({}) than expected ({}).", _0, _1)]
@@ -80,13 +80,13 @@ impl std::fmt::Display for CorruptPacketKind {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let reason = match self {
             CorruptPacketKind::TooShort =>
-                "it is too short to contain both data and verifying information.",
+                "it is too short to contain both data and verifying information",
             CorruptPacketKind::NotAuthentic =>
                 "while the data was originally validated with the expected master key, \
-                it has been altered in some way since then.",
+                it has been altered in some way since then",
             CorruptPacketKind::IncorrectlyEncrypted =>
                 "its data is identical to what was originally created, but the \
-                sender's encryption is flawed."
+                sender's encryption is flawed"
         };
         write!(f, "{}", reason)
     }

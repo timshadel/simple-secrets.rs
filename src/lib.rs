@@ -43,6 +43,25 @@ pub struct Packet {
 impl Packet {
 
     /// Construct a Packet with the given master key. Must be 64 hex characters.
+    /// 
+    /// # Errors
+    ///
+    /// Returns an error if there is a problem with the key. The error kind can be:
+    ///
+    /// - [`TextDecodingError`] if key string is anything but an even number of
+    ///   hex characters.
+    /// - [`InvalidKeyLength`] if the key is not exactly 64 hex characters (32 bytes).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use simple_secrets::Packet;
+    /// // Try `head /dev/urandom | shasum -a 256` to make a decent 256-bit key
+    /// let sender = Packet::new("<64-char hex string master key (32 bytes, 256 bits)>".to_string());
+    /// ```
+    ///
+    /// [`TextDecodingError`]: enum.SimpleSecretsError.html#variant.TextDecodingError
+    /// [`InvalidKeyLength`]: enum.SimpleSecretsError.html#variant.InvalidKeyLength
     pub fn new(master: String) -> Result<Packet, SimpleSecretsError> {
         let master = master.to_ascii_u8();
         let key_bytes = HEXLOWER_PERMISSIVE.decode(&master)
@@ -58,6 +77,27 @@ impl Packet {
     /// Turn a Rust type into an encrypted packet. This object will
     /// possibly be deserialized in a different programming
     /// environment—it should be JSON-like in structure.
+    /// 
+    /// # Errors
+    ///
+    /// Returns a [`SimpleSecretsError`] if there is a problem at any point
+    /// in the process of serializing, encrypting, authenticating, and serializing
+    /// the data. The various scenarios are described in the doc for that error type.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use simple_secrets::Packet;
+    /// // Try `head /dev/urandom | shasum -a 256` to make a decent 256-bit key
+    /// let sender = Packet::new("<64-char hex string master key (32 bytes, 256 bits)>".to_string());
+    /// let packet = sender.pack("this is a secret message").unwrap();
+    /// assert_eq!(packet, "Qr4m7AughkcQIRqQvlyXiB67EwHdBf5n9J\
+    ///                     D2s_Z9NpO4ksPGvLYjNbDm3HRzvFXFSpV2\
+    ///                     IqDQw_LTamndMh2c7iOQT0lSp4LstqJPAt\
+    ///                     oQklU5sb7JHYyTOuf-6W-q7W8gAnq1wCs5");
+    /// ```
+    ///
+    /// [`SimpleSecretsError`]: enum.SimpleSecretsError.html
     pub fn pack<T: ?Sized>(&self, value: &T) -> Result<String, SimpleSecretsError> where T: Serialize {
         let mut data = primitives::serialize(value)?;
         self.pack_raw(&mut data)
@@ -66,6 +106,30 @@ impl Packet {
     /// Turn an encrypted packet into a Rust structure. This
     /// object possibly originated in a different programming
     /// environment—it should be JSON-like in structure.
+    /// 
+    /// # Errors
+    ///
+    /// Returns a [`SimpleSecretsError`] if there is a problem at any point
+    /// in the process of decoding, verifying, decrypting, and deserializing
+    /// the data. The various scenarios are described in the doc for that
+    /// error type.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use simple_secrets::Packet;
+    /// // Try `head /dev/urandom | shasum -a 256` to make a decent 256-bit key
+    /// let sender = Packet::new("<64-char hex string master key (32 bytes, 256 bits)>".to_string());
+    /// // Read data from somewhere
+    /// let packet = "OqlG6KVMeyFYmunboS3HIXkvN_nXKTxg2y\
+    ///               NkQydZOhvJrZvmfov54hUmkkiZCnlhzyrl\
+    ///               wOJkbV7XnPPbqvdzZ6TsFOO5YdmxjxRksZ\
+    ///               meIhbhLaMiDbfsOuSY1dBn_ZgtYCw-FRIM".to_string();
+    /// let secret_message = sender.unpack(packet)?;
+    /// // equivalent of => { "msg": "this is a secret message" }
+    /// ```
+    ///
+    /// [`SimpleSecretsError`]: enum.SimpleSecretsError.html
     pub fn unpack<'a, T>(&self, websafe: String) -> Result<T, SimpleSecretsError> where T: Deserialize<'a> {
         let body = self.unpack_raw(websafe)?;
         primitives::deserialize(&body)
@@ -223,13 +287,13 @@ mod tests {
     #[test]
     #[should_panic]
     fn it_should_only_accept_hex() {
-        Packet::new(String::from("not-a-hex-string")).unwrap();
+        Packet::new("not-a-hex-string".to_string()).unwrap();
     }
 
     #[test]
     #[should_panic]
     fn it_should_only_accept_64char_hex() {
-        Packet::new(String::from("1dad")).unwrap();
+        Packet::new("1dad".to_string()).unwrap();
     }
 
     #[test]

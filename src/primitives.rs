@@ -23,6 +23,7 @@ use serde::{ Deserialize, Serialize };
 
 // TODO: explain the data items inside the error tuples
 
+/// All the ways the secrets may not work.
 #[derive(Debug, Fail)]
 pub enum SimpleSecretsError {
 

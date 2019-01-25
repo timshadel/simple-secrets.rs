@@ -3,16 +3,22 @@
 /// Module dependencies
 ///
 
+#[macro_use] extern crate failure;
+
 mod primitives;
 
-use crate::primitives::{ ASCIIData, SimpleError };
+pub use crate::primitives::SimpleSecretsError;
+
+use crate::primitives::ASCIIData;
+use crate::primitives::SimpleSecretsError::*;
+use crate::primitives::CorruptPacketKind::*;
 use data_encoding::HEXLOWER_PERMISSIVE;
 use serde::{ Deserialize, Serialize };
 
 
-///
-/// Data types
-///
+//
+// Data types
+//
 
 /// Converts serializable data to and from websafe strings.
 pub struct Packet {
@@ -22,35 +28,36 @@ pub struct Packet {
 
     /// Function to generate an IV during encryption. Defaults to random
     /// bytes, but overridden during compatibility tests for predictability.
-    iv: fn() -> [u8; 16],
+    iv: fn() -> Result<[u8; 16], SimpleSecretsError>,
 
     /// Function to generate a nonce during encryption. Defaults to random
     /// bytes, but overridden during compatibility tests for predictability.
-    nonce: fn() -> [u8; 16]
+    nonce: fn() -> Result<[u8; 16], SimpleSecretsError>
 }
 
 
-///
-/// Public functions
-///
+//
+// Public functions
+//
 
 impl Packet {
 
     /// Construct a Packet with the given master key. Must be 64 hex characters.
-    pub fn new(master: String) -> Result<Packet, SimpleError> {
-        let mut key: [u8; 32] = [0; 32];
+    pub fn new(master: String) -> Result<Packet, SimpleSecretsError> {
         let master = master.to_ascii_u8();
-        let length = HEXLOWER_PERMISSIVE.decode_mut(&master, &mut key)?;
-        if length != 32 {
-            return Err(SimpleError::InvalidLength)
+        let key_bytes = HEXLOWER_PERMISSIVE.decode(&master).map_err(|e| TextDecodingError("master key", e))?;
+        if key_bytes.len() != 32 {
+            return Err(InvalidKeyLength(key_bytes.len()))
         }
+        let mut key: [u8; 32] = [0; 32];
+        key.copy_from_slice(&key_bytes);
         Ok(Packet::from(key))
     }
 
     /// Turn a Rust type into an encrypted packet. This object will
     /// possibly be deserialized in a different programming
     /// environment—it should be JSON-like in structure.
-    pub fn pack<T: ?Sized>(&self, value: &T) -> Result<String, SimpleError> where T: Serialize {
+    pub fn pack<T: ?Sized>(&self, value: &T) -> Result<String, SimpleSecretsError> where T: Serialize {
         let mut data = primitives::serialize(value)?;
         self.pack_raw(&mut data)
     }
@@ -58,14 +65,14 @@ impl Packet {
     /// Turn an encrypted packet into a Rust structure. This
     /// object possibly originated in a different programming
     /// environment—it should be JSON-like in structure.
-    pub fn unpack<'a, T>(&self, websafe: String) -> Result<T, SimpleError> where T: Deserialize<'a> {
+    pub fn unpack<'a, T>(&self, websafe: String) -> Result<T, SimpleSecretsError> where T: Deserialize<'a> {
         let body = self.unpack_raw(websafe)?;
         primitives::deserialize(&body)
     }
 
     /// Encrypt a packet into raw bytes. This allows the caller
     /// to issue app-specific typesafe serialization calls beforehand.
-    pub fn pack_raw(&self, data: &mut Vec<u8>) -> Result<String, SimpleError> {
+    pub fn pack_raw(&self, data: &mut Vec<u8>) -> Result<String, SimpleSecretsError> {
         let mut body = self.encrypt_body(data)?;
         let mut packet = self.authenticate(&mut body);
         let websafe = primitives::stringify(&packet);
@@ -76,7 +83,7 @@ impl Packet {
 
     /// Decrypt a packet into raw bytes. This allows the caller
     /// to issue app-specific typesafe deserialization calls later.
-    pub fn unpack_raw(&self, websafe: String) -> Result<Vec<u8>, SimpleError> {
+    pub fn unpack_raw(&self, websafe: String) -> Result<Vec<u8>, SimpleSecretsError> {
         let packet = primitives::binify(&websafe.to_ascii_u8())?;
         let mut cipherdata = self.verify(&packet[..])?;
         self.decrypt_body(&mut cipherdata[..])
@@ -85,18 +92,18 @@ impl Packet {
 }
 
 
-///
-/// Private functions
-///
+//
+// Private functions
+//
 
 impl Packet {
 
-    fn encrypt_body(&self, data: &mut [u8]) -> Result<Vec<u8>, SimpleError> {
-        let mut nonce = (self.nonce)();
+    fn encrypt_body(&self, data: &mut [u8]) -> Result<Vec<u8>, SimpleSecretsError> {
+        let mut nonce = (self.nonce)()?;
         let mut body = [&nonce[..], &data[..]].concat();
         let mut key = primitives::derive_sender_key(self.master_key);
 
-        let cipherdata = primitives::encrypt(&body, key, Some((self.iv)()))?;
+        let cipherdata = primitives::encrypt(&body, key, Some((self.iv)()?))?;
         primitives::zero(data);
         primitives::zero(&mut nonce);
         primitives::zero(&mut body);
@@ -105,7 +112,7 @@ impl Packet {
         Ok(cipherdata)
     }
 
-    fn decrypt_body(&self, data: &mut [u8]) -> Result<Vec<u8>, SimpleError> {
+    fn decrypt_body(&self, data: &mut [u8]) -> Result<Vec<u8>, SimpleSecretsError> {
         let mut iv: [u8; 16] = [0; 16];
         iv.copy_from_slice(&data[0..16]);
         let encrypted = &data[16..];
@@ -142,24 +149,25 @@ impl Packet {
     /// Verify the given data from the embedded message authentication code.
     ///
     /// Uses HMAC-SHA256.
-    fn verify(&self, data: &[u8]) -> Result<Vec<u8>, SimpleError> {
+    fn verify(&self, data: &[u8]) -> Result<Vec<u8>, SimpleSecretsError> {
+        if data.len() <= 38 {
+            return Err(CorruptPacket(TooShort))
+        }
         let key_id = primitives::identify(&self.master_key);
         if !primitives::compare(&key_id, &data[0..6]) {
-            return Err(SimpleError::UnknownKey)
+            let expected = HEXLOWER_PERMISSIVE.encode(&key_id);
+            let found = HEXLOWER_PERMISSIVE.encode(&data[0..6]);
+            return Err(UnknownKey(found, expected))
         }
         let mac_offset = data.len() - 32;
-        if mac_offset <= 0 {
-            return Err(SimpleError::InvalidLength)
-        }
         let body = &data[0..mac_offset];
         let packet_mac = &data[mac_offset..];
         let hmac_key = primitives::derive_sender_hmac(self.master_key);
         let mac = primitives::mac(body, hmac_key);
         if !primitives::compare(packet_mac, &mac) {
-            return Err(SimpleError::InvalidMAC)
+            return Err(CorruptPacket(NotAuthentic))
         }
         let mut value = Vec::<u8>::new();
-        // value.extend(&mac);
         value.extend(&body[6..]);
         Ok(value)
     }
@@ -204,7 +212,7 @@ mod tests {
 
     #[test]
     #[allow(unused_variables)]
-    fn it_should_accept_64char_hex() -> Result<(), SimpleError> {
+    fn it_should_accept_64char_hex() -> Result<(), SimpleSecretsError> {
         let key = [0xbc; 32];
         let hex = HEXLOWER_PERMISSIVE.encode(&key);
         let packet = Packet::new(hex)?;
@@ -261,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn it_should_have_recoverable_ciphertext() -> Result<(), SimpleError> {
+    fn it_should_have_recoverable_ciphertext() -> Result<(), SimpleSecretsError> {
         let sender = Packet::from([0xbc; 32]);
         let packet = sender.pack("this is a secret message")?;
         let result: String = sender.unpack(packet)?;
@@ -281,7 +289,7 @@ mod tests {
     }
 
     #[test]
-    fn it_should_recover_full_objects() -> Result<(), SimpleError> {
+    fn it_should_recover_full_objects() -> Result<(), SimpleSecretsError> {
         let sender = Packet::from([0xbc; 32]);
         let body = vec![String::from("this"), String::from("is a secret")];
         let packet = sender.pack(&body)?;
@@ -292,6 +300,11 @@ mod tests {
 
 }
 
+
+
+//
+// Cross-language compatibility tests
+//
 
 #[cfg(test)]
 mod compatibility {
@@ -305,20 +318,20 @@ mod compatibility {
         let key_bytes = HEXLOWER.decode(key_bytes).unwrap();
         key.copy_from_slice(&key_bytes);
 
-        fn compat_iv() -> [u8; 16] {
+        fn compat_iv() -> Result<[u8; 16], SimpleSecretsError> {
             let mut iv: [u8; 16] = [0; 16];
             let iv_bytes = b"7f3333233ce9235860ef902e6d0fcf35";
             let iv_bytes = HEXLOWER.decode(iv_bytes).unwrap();
             iv.copy_from_slice(&iv_bytes);
-            iv
+            Ok(iv)
         }
 
-        fn compat_nonce() -> [u8; 16] {
+        fn compat_nonce() -> Result<[u8; 16], SimpleSecretsError> {
             let mut nonce: [u8; 16] = [0; 16];
             let nonce_bytes = b"83dcf5916c0b5c4bc759e44f9f5c8c50";
             let nonce_bytes = HEXLOWER.decode(nonce_bytes).unwrap();
             nonce.copy_from_slice(&nonce_bytes);
-            nonce
+            Ok(nonce)
         }
 
         Packet {
@@ -337,7 +350,7 @@ mod compatibility {
         static WEBSAFE_MSGPACK_5: &str = "W7l1PJaffzMzIzzpI1hg75AubQ_PNSjEUycoH1Z7GEwonPVW7yNp54eHe8KRY2JqOo9H8bi3Hnm4G0-r5SNlXXhIW9S99qTxTwibKW7mLkaNMTeZ1ktDwx-4sjCpCnXPIyZe7-l6-o6XjIqazRdhGD6AH5ZS9UFqLpaqIowSUQ9CeiQeFBQ";
 
         #[test]
-        fn it_creates_packets_from_strings() -> Result<(), SimpleError> {
+        fn it_creates_packets_from_strings() -> Result<(), SimpleSecretsError> {
             let sender = compat_sender();
             let packet = sender.pack(COMPAT_STRING)?;
             assert_eq!(packet, WEBSAFE_MSGPACK_5);
@@ -345,7 +358,7 @@ mod compatibility {
         }
 
         #[test]
-        fn it_recovers_packets_from_strings() -> Result<(), SimpleError> {
+        fn it_recovers_packets_from_strings() -> Result<(), SimpleSecretsError> {
             let sender = compat_sender();
             let output: String = sender.unpack(String::from(WEBSAFE_MSGPACK_1))?;
             assert_eq!(output, COMPAT_STRING);
@@ -369,7 +382,7 @@ mod compatibility {
         }
 
         #[test]
-        fn it_creates_packets_from_bytes() -> Result<(), SimpleError> {
+        fn it_creates_packets_from_bytes() -> Result<(), SimpleSecretsError> {
             let sender = compat_sender();
             let packet = sender.pack(&compat_bytes())?;
             assert_eq!(packet, WEBSAFE_MSGPACK_5);
@@ -377,7 +390,7 @@ mod compatibility {
         }
 
         #[test]
-        fn it_recovers_packets_from_bytes() -> Result<(), SimpleError> {
+        fn it_recovers_packets_from_bytes() -> Result<(), SimpleSecretsError> {
             let sender = compat_sender();
             let output: ByteBuf = sender.unpack(String::from(WEBSAFE_MSGPACK_1))?;
             assert_eq!(output, compat_bytes());
@@ -397,7 +410,7 @@ mod compatibility {
         // Note: No change to numbers encoding in MsgPack5
 
         #[test]
-        fn it_creates_packets_from_numbers() -> Result<(), SimpleError> {
+        fn it_creates_packets_from_numbers() -> Result<(), SimpleSecretsError> {
             let sender = compat_sender();
             let packet = sender.pack(&COMPAT_NUMBER)?;
             assert_eq!(packet, WEBSAFE_MSGPACK_1);
@@ -405,7 +418,7 @@ mod compatibility {
         }
 
         #[test]
-        fn it_recovers_packets_from_numbers() -> Result<(), SimpleError> {
+        fn it_recovers_packets_from_numbers() -> Result<(), SimpleSecretsError> {
             let sender = compat_sender();
             let output: u16 = sender.unpack(String::from(WEBSAFE_MSGPACK_1))?;
             assert_eq!(output, COMPAT_NUMBER);
@@ -422,7 +435,7 @@ mod compatibility {
         // Note: No change to nil encoding in MsgPack5
 
         #[test]
-        fn it_creates_packets_from_nil() -> Result<(), SimpleError> {
+        fn it_creates_packets_from_nil() -> Result<(), SimpleSecretsError> {
             let sender = compat_sender();
             let unit = ();
             let packet = sender.pack(&unit)?;
@@ -431,7 +444,7 @@ mod compatibility {
         }
 
         #[test]
-        fn it_recovers_packets_from_nil() -> Result<(), SimpleError> {
+        fn it_recovers_packets_from_nil() -> Result<(), SimpleSecretsError> {
             let sender = compat_sender();
             let output: () = sender.unpack(String::from(WEBSAFE_MSGPACK_1))?;
             assert_eq!(output, ());
@@ -455,7 +468,7 @@ mod compatibility {
         }
 
         #[test]
-        fn it_creates_packets_from_an_array() -> Result<(), SimpleError> {
+        fn it_creates_packets_from_an_array() -> Result<(), SimpleSecretsError> {
             let sender = compat_sender();
             let packet = sender.pack(&compat_array())?;
             assert_eq!(packet, WEBSAFE_MSGPACK_5);
@@ -463,7 +476,7 @@ mod compatibility {
         }
 
         #[test]
-        fn it_recovers_packets_from_an_array() -> Result<(), SimpleError> {
+        fn it_recovers_packets_from_an_array() -> Result<(), SimpleSecretsError> {
             let sender = compat_sender();
             let output: Vec<String> = sender.unpack(String::from(WEBSAFE_MSGPACK_1))?;
             assert_eq!(output, compat_array());
@@ -490,7 +503,7 @@ mod compatibility {
         }
 
         #[test]
-        fn it_creates_packets_from_a_map() -> Result<(), SimpleError> {
+        fn it_creates_packets_from_a_map() -> Result<(), SimpleSecretsError> {
             let sender = compat_sender();
             let packet = sender.pack(&compat_map())?;
             assert_eq!(packet, WEBSAFE_MSGPACK_5);
@@ -498,7 +511,7 @@ mod compatibility {
         }
 
         #[test]
-        fn it_recovers_packets_from_a_map() -> Result<(), SimpleError> {
+        fn it_recovers_packets_from_a_map() -> Result<(), SimpleSecretsError> {
             let sender = compat_sender();
             let output: HashMap<String, String> = sender.unpack(String::from(WEBSAFE_MSGPACK_1))?;
             assert_eq!(output, compat_map());

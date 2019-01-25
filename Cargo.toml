@@ -10,6 +10,7 @@ readme = "README.md"
 
 [dependencies]
 data-encoding = "^2.1.2"
+failure = "^0.1.5"
 rand = "^0.6"
 rmp-serde = "^0.13"
 rust-crypto = "^0.2"

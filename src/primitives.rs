@@ -14,34 +14,86 @@ use crypto::hmac::Hmac;
 use crypto::mac::Mac;
 use crypto::sha2::Sha256;
 use crypto::symmetriccipher::SymmetricCipherError;
-use data_encoding::{ BASE64URL_NOPAD, DecodeError, DecodeKind, DecodePartial };
+use data_encoding::{ BASE64URL_NOPAD, DecodeError };
 use rand::RngCore;
 use rand::rngs::OsRng;
 use rmp_serde::{ Deserializer, Serializer };
 use serde::{ Deserialize, Serialize };
 
 
-pub enum SimpleError {
-    InvalidLength,
-    InvalidMAC,
-    InvalidPadding,
-    InvalidSymbol,
-    EncodingError,
-    UnknownKey,
+// TODO: explain the data items inside the error tuples
+
+#[derive(Debug, Fail)]
+pub enum SimpleSecretsError {
+
+    /// There was a problem decoding text data into bytes.
+    /// Examples include the hex master key or the websafe packet values.
+    #[fail(display = "The data for the {} could not be understood.", _0)]
+    TextDecodingError(&'static str, #[cause] DecodeError),
+
+    /// The data is has been corrupted to the point where it is unrecoverable.
+    #[fail(display = "The packet has been corrupted because {}.", _0)]
+    CorruptPacket(CorruptPacketKind),
+
+    /// The data was verified and decrypted, but could not be deserialized into a Rust data type.
+    #[fail(display = "The data was successfully decrypted, but could not be understood by this program.")]
+    DeserializingError(#[cause] rmp_serde::decode::Error),
+
+    /// The master key data must contain exactly 32 bytes, but it did not.
+    #[fail(display = "The master key must contain 32 bytes to make a 256-bit key. Found {} bytes.", _0)]
+    InvalidKeyLength(usize),
+
+    /// The system's source of secure randomness is not available for use.
+    #[fail(display = "The is not ready to encrypt data.")]
+    RandomSourceUnavailable(#[cause] rand::Error),
+
+    /// The Rust data type could not be prepared for encryption by serializing it into bytes.
+    #[fail(display = "The data used in this program could not be converted to a form suitable for encryption.")]
+    SerializingError(#[cause] rmp_serde::encode::Error),
+
+    /// The packet was encrypted with a another key.
+    #[fail(display = "The packet is encrypted with a different key ({}) than expected ({}).", _0, _1)]
+    UnknownKey(String, String),
+
 }
 
-impl std::fmt::Debug for SimpleError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            SimpleError::InvalidLength => write!(f, "Invalid length"),
-            SimpleError::InvalidMAC => write!(f, "Invalid message authentication code"),
-            SimpleError::InvalidPadding => write!(f, "Invalid padding"),
-            SimpleError::InvalidSymbol => write!(f, "Invalid symbol"),
-            SimpleError::EncodingError => write!(f, "Encoding error"),
-            SimpleError::UnknownKey => write!(f, "Unknown key"),
-        }
-    }
+/// Reasons why the packet data has been corrupted to the point where it is unrecoverable.
+#[derive(Debug)]
+pub enum CorruptPacketKind {
+
+    /// The packet has been corrupted because it is too short to contain both
+    /// data and verifying information.
+    TooShort,
+
+    /// The packet has been corrupted because while the data was originally validated
+    /// with the expected master key, it has been altered in some way since then.
+    NotAuthentic,
+
+    /// The packet has been corrupted because its data is identical to what was
+    /// originally created, but the sender's encryption is flawed.
+    IncorrectlyEncrypted
+
 }
+
+impl std::fmt::Display for CorruptPacketKind {
+
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let reason = match self {
+            CorruptPacketKind::TooShort =>
+                "it is too short to contain both data and verifying information.",
+            CorruptPacketKind::NotAuthentic =>
+                "while the data was originally validated with the expected master key, \
+                it has been altered in some way since then.",
+            CorruptPacketKind::IncorrectlyEncrypted =>
+                "its data is identical to what was originally created, but the \
+                sender's encryption is flawed."
+        };
+        write!(f, "{}", reason)
+    }
+
+}
+
+
 
 //
 // Public functions
@@ -49,11 +101,11 @@ impl std::fmt::Debug for SimpleError {
 
 
 /// Provide 16 securely random bytes.
-pub fn nonce() -> [u8; 16] {
-    let mut result: [u8; 16] = [0; 16];
-    let mut rng = OsRng::new().ok().unwrap();
-    rng.fill_bytes(&mut result);
-    return result;
+pub fn nonce() -> Result<[u8; 16], SimpleSecretsError> {
+    let mut value: [u8; 16] = [0; 16];
+    let mut rng = OsRng::new()?;
+    rng.fill_bytes(&mut value);
+    Ok(value)
 }
 
 /// Generate the authentication key for messages originating from
@@ -61,7 +113,7 @@ pub fn nonce() -> [u8; 16] {
 ///
 /// Uses the ASCII string 'simple-crypto/sender-hmac-key' as the role.
 pub fn derive_sender_hmac(master_key: [u8; 32]) -> [u8; 32] {
-    return derive(master_key, "simple-crypto/sender-hmac-key");
+    derive(master_key, "simple-crypto/sender-hmac-key")
 }
 
 /// Generate the encryption key for messages originating from
@@ -69,7 +121,7 @@ pub fn derive_sender_hmac(master_key: [u8; 32]) -> [u8; 32] {
 ///
 /// Uses the ASCII string 'simple-crypto/sender-cipher-key' as the role.
 pub fn derive_sender_key(master_key: [u8; 32]) -> [u8; 32] {
-    return derive(master_key, "simple-crypto/sender-cipher-key");
+    derive(master_key, "simple-crypto/sender-cipher-key")
 }
 
 /// Generate the authentication key for messages originating from
@@ -78,7 +130,7 @@ pub fn derive_sender_key(master_key: [u8; 32]) -> [u8; 32] {
 /// Uses the ASCII string 'simple-crypto/receiver-hmac-key' as the role.
 #[allow(dead_code)]
 pub fn derive_receiver_hmac(master_key: [u8; 32]) -> [u8; 32] {
-    return derive(master_key, "simple-crypto/receiver-hmac-key");
+    derive(master_key, "simple-crypto/receiver-hmac-key")
 }
 
 /// Generate the encryption key for messages originating from
@@ -87,14 +139,14 @@ pub fn derive_receiver_hmac(master_key: [u8; 32]) -> [u8; 32] {
 /// Uses the ASCII string 'simple-crypto/receiver-cipher-key' as the role.
 #[allow(dead_code)]
 pub fn derive_receiver_key(master_key: [u8; 32]) -> [u8; 32] {
-    return derive(master_key, "simple-crypto/receiver-cipher-key");
+    derive(master_key, "simple-crypto/receiver-cipher-key")
 }
 
 /// Encrypt buffer with the given key.
 ///
 /// Uses AES256 with a random 128-bit initialization vector.
-pub fn encrypt(data: &[u8], key: [u8; 32], iv: Option<[u8; 16]>) -> Result<Vec<u8>, SimpleError> {
-    let iv = iv.unwrap_or(nonce());
+pub fn encrypt(data: &[u8], key: [u8; 32], iv: Option<[u8; 16]>) -> Result<Vec<u8>, SimpleSecretsError> {
+    let iv = iv.unwrap_or(nonce()?);
     let mut encryptor = aes::cbc_encryptor(aes::KeySize::KeySize256, &key,
         &iv, blockmodes::PkcsPadding);
 
@@ -117,7 +169,7 @@ pub fn encrypt(data: &[u8], key: [u8; 32], iv: Option<[u8; 16]>) -> Result<Vec<u
 
 
 /// Decrypt buffer with the given key.
-pub fn decrypt(data: &[u8], key: [u8; 32], iv: [u8; 16]) -> Result<Vec<u8>, SimpleError> {
+pub fn decrypt(data: &[u8], key: [u8; 32], iv: [u8; 16]) -> Result<Vec<u8>, SimpleSecretsError> {
     let mut decryptor = aes::cbc_decryptor(aes::KeySize::KeySize256, &key,
         &iv, blockmodes::PkcsPadding);
 
@@ -179,14 +231,15 @@ pub fn compare(a: &[u8], b: &[u8]) -> bool {
     for i in 0..a.len() {
         same |= a[i] ^ b[i];
     }
-    return same == 0;
+    same == 0
 }
 
 /// Turn a websafe string back into a binary buffer.
 ///
 /// Uses base64url encoding.
-pub fn binify(string: &[u8]) -> Result<Vec<u8>, SimpleError> {
-    Ok(BASE64URL_NOPAD.decode(string)?)
+pub fn binify(string: &[u8]) -> Result<Vec<u8>, SimpleSecretsError> {
+    Ok(BASE64URL_NOPAD.decode(string)
+        .map_err(|e| SimpleSecretsError::TextDecodingError("packet", e))?)
 }
 
 /// Turn a binary buffer into a websafe string.
@@ -203,9 +256,9 @@ pub fn stringify(data: &[u8]) -> String {
 /// in structure.
 ///
 /// Uses serde for serialization into MsgPack format.
-pub fn serialize<T: ?Sized>(value: &T) -> Result<Vec<u8>, SimpleError> where T: Serialize {
+pub fn serialize<T: ?Sized>(value: &T) -> Result<Vec<u8>, SimpleSecretsError> where T: Serialize {
     let mut buf = Vec::<u8>::new();
-    value.serialize(&mut Serializer::new(&mut buf)).unwrap();
+    value.serialize(&mut Serializer::new(&mut buf))?;
     Ok(buf)
 }
 
@@ -216,10 +269,9 @@ pub fn serialize<T: ?Sized>(value: &T) -> Result<Vec<u8>, SimpleError> where T: 
 /// environment—it should be JSON-like in structure.
 ///
 /// Uses serde for deserialization from MsgPack format.
-pub fn deserialize<'a, 'b, T>(v: &'a [u8]) -> Result<T, SimpleError> where T: Deserialize<'b>, {
+pub fn deserialize<'a, 'b, T>(v: &'a [u8]) -> Result<T, SimpleSecretsError> where T: Deserialize<'b>, {
     let mut de = Deserializer::new(v);
-    let value = Deserialize::deserialize(&mut de).unwrap();
-    Ok(value)
+    Ok(Deserialize::deserialize(&mut de)?)
 }
 
 /// Overwrite the contents of the buffer with zeroes.
@@ -229,6 +281,7 @@ pub fn zero(buf: &mut [u8]) {
         buf[i] = 0;
     }
 }
+
 
 
 //
@@ -260,6 +313,7 @@ impl ASCIIData for str {
 }
 
 
+
 //
 // Private functions
 //
@@ -270,41 +324,35 @@ fn derive(master_key: [u8; 32], role: &str) -> [u8; 32] {
     let mut hash = Sha256::new();
     hash.input(&master_key);
     hash.input(&role);
-    let mut result: [u8; 32] = [0; 32];
-    hash.result(&mut result);
-    return result;
+    let mut output: [u8; 32] = [0; 32];
+    hash.result(&mut output);
+    output
 }
 
-impl From<DecodeError> for SimpleError {
-
-    fn from(err: DecodeError) -> Self {
-        match err.kind {
-            DecodeKind::Length => SimpleError::InvalidLength,
-            DecodeKind::Symbol => SimpleError::InvalidSymbol,
-            DecodeKind::Trailing => SimpleError::InvalidPadding,
-            DecodeKind::Padding => SimpleError::InvalidPadding
-        }
+impl From<SymmetricCipherError> for SimpleSecretsError {
+    /// Occurs only when the encrypted data has been damaged. This should probably not be seen in
+    /// practice since both the key and the data integrity are checked before decryption.
+    fn from(_err: SymmetricCipherError) -> Self {
+        SimpleSecretsError::CorruptPacket(CorruptPacketKind::IncorrectlyEncrypted)
     }
-
 }
 
-impl From<DecodePartial> for SimpleError {
-
-    fn from(partial: DecodePartial) -> Self {
-        SimpleError::from(partial.error)
+impl From<rmp_serde::decode::Error> for SimpleSecretsError {
+    fn from(err: rmp_serde::decode::Error) -> Self {
+        SimpleSecretsError::DeserializingError(err)
     }
-
 }
 
-impl From<SymmetricCipherError> for SimpleError {
-
-    fn from(err: SymmetricCipherError) -> Self {
-        match err {
-            SymmetricCipherError::InvalidLength => SimpleError::InvalidLength,
-            SymmetricCipherError::InvalidPadding => SimpleError::InvalidPadding
-        }
+impl From<rmp_serde::encode::Error> for SimpleSecretsError {
+    fn from(err: rmp_serde::encode::Error) -> Self {
+        SimpleSecretsError::SerializingError(err)
     }
+}
 
+impl From<rand::Error> for SimpleSecretsError {
+    fn from(err: rand::Error) -> Self {
+        SimpleSecretsError::RandomSourceUnavailable(err)
+    }
 }
 
 
@@ -320,7 +368,7 @@ mod tests {
 
     #[test]
     fn nonce_should_not_be_zeros() {
-        let nonce = nonce();
+        let nonce = nonce().unwrap();
         let nonce = HEXLOWER.encode(&nonce);
         assert_ne!(nonce, "00000000000000000000000000000000");
     }
@@ -466,14 +514,14 @@ mod tests {
         let mut b = [74, 68, 69, 73, 20, 69, 73, 20, 73, 0x6f, 0x6d, 65];
         let z = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
-        let bStr = HEXLOWER.encode(&b);
-        let zStr = HEXLOWER.encode(&z);
-        assert_ne!(bStr, zStr);
+        let b_str = HEXLOWER.encode(&b);
+        let z_str = HEXLOWER.encode(&z);
+        assert_ne!(b_str, z_str);
 
         zero(&mut b[..]);
-        let bStr = HEXLOWER.encode(&b);
+        let b_str = HEXLOWER.encode(&b);
 
-        assert_eq!(bStr, zStr);
+        assert_eq!(b_str, z_str);
     }
 
 }

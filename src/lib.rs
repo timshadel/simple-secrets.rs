@@ -84,7 +84,7 @@ impl Packet {
     /// Decrypt a packet into raw bytes. This allows the caller
     /// to issue app-specific typesafe deserialization calls later.
     pub fn unpack_raw(&self, websafe: String) -> Result<Vec<u8>, SimpleSecretsError> {
-        let packet = primitives::binify(&websafe.to_ascii_u8())?;
+        let packet = primitives::binify(websafe)?;
         let mut cipherdata = self.verify(&packet[..])?;
         self.decrypt_body(&mut cipherdata[..])
     }

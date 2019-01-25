@@ -237,8 +237,9 @@ pub fn compare(a: &[u8], b: &[u8]) -> bool {
 /// Turn a websafe string back into a binary buffer.
 ///
 /// Uses base64url encoding.
-pub fn binify(string: &[u8]) -> Result<Vec<u8>, SimpleSecretsError> {
-    Ok(BASE64URL_NOPAD.decode(string)
+pub fn binify(string: String) -> Result<Vec<u8>, SimpleSecretsError> {
+    let ascii = string.to_ascii_u8();
+    Ok(BASE64URL_NOPAD.decode(&ascii)
         .map_err(|e| SimpleSecretsError::TextDecodingError("packet", e))?)
 }
 
@@ -478,7 +479,7 @@ mod tests {
 
     #[test]
     fn it_should_binify_from_a_string() {
-        let val = binify(b"cartinir90_-");
+        let val = binify("cartinir90_-".to_string());
         let val = val.ok().unwrap();
         assert_eq!(val.len(), 9);
         let val = HEXLOWER.encode(&val);

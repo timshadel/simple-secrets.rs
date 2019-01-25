@@ -29,31 +29,48 @@ pub enum SimpleSecretsError {
     /// There was a problem decoding text data into bytes.
     /// Examples include the hex master key or the websafe packet values.
     #[fail(display = "The data for the {} could not be understood.", _0)]
-    TextDecodingError(&'static str, #[fail(cause)] DecodeError),
+    TextDecodingError {
+        /// The purpose of the item we were decoding
+        role: &'static str,
+
+        /// The underlying error
+        #[fail(cause)]
+        cause: DecodeError
+    },
 
     /// The data is has been corrupted to the point where it is unrecoverable.
+    /// The kind contains more detail.
     #[fail(display = "The packet has been corrupted because {}.", _0)]
     CorruptPacket(CorruptPacketKind),
 
     /// The data was verified and decrypted, but could not be deserialized into a Rust data type.
+    /// Contains the underlying error.
     #[fail(display = "The data was successfully decrypted, but could not be understood by this program.")]
     DeserializingError(#[fail(cause)] rmp_serde::decode::Error),
 
     /// The master key data must contain exactly 32 bytes, but it did not.
+    /// Contains the actual number of bytes found.
     #[fail(display = "The master key must contain 32 bytes to make a 256-bit key. Found {} bytes.", _0)]
     InvalidKeyLength(usize),
 
     /// The system's source of secure randomness is not available for use.
+    /// Contains the underlying error.
     #[fail(display = "The is not ready to encrypt data.")]
     RandomSourceUnavailable(#[fail(cause)] rand::Error),
 
     /// The Rust data type could not be prepared for encryption by serializing it into bytes.
+    /// Contains the underlying error.
     #[fail(display = "The data used in this program could not be converted to a form suitable for encryption.")]
     SerializingError(#[fail(cause)] rmp_serde::encode::Error),
 
     /// The packet was encrypted with a another key.
-    #[fail(display = "The packet is encrypted with a different key ({}) than expected ({}).", _0, _1)]
-    UnknownKey(String, String),
+    #[fail(display = "The packet is encrypted with a different key ({}) than expected ({}).", actual_id, expected_id)]
+    UnknownKey {
+        /// The key id mentioned in the packet header. 6 bytes (12 hex chars).
+        expected_id: String,
+        /// The key id provided by the application. 6 bytes (12 hex chars).
+        actual_id: String
+    },
 
 }
 
@@ -240,7 +257,7 @@ pub fn compare(a: &[u8], b: &[u8]) -> bool {
 pub fn binify(string: String) -> Result<Vec<u8>, SimpleSecretsError> {
     let ascii = string.to_ascii_u8();
     Ok(BASE64URL_NOPAD.decode(&ascii)
-        .map_err(|e| SimpleSecretsError::TextDecodingError("packet", e))?)
+        .map_err(|e| SimpleSecretsError::TextDecodingError { role: "packet", cause: e })?)
 }
 
 /// Turn a binary buffer into a websafe string.

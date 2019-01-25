@@ -7,7 +7,7 @@
 
 mod primitives;
 
-pub use crate::primitives::SimpleSecretsError;
+pub use crate::primitives::{ SimpleSecretsError, CorruptPacketKind };
 
 use crate::primitives::ASCIIData;
 use crate::primitives::SimpleSecretsError::*;
@@ -45,7 +45,8 @@ impl Packet {
     /// Construct a Packet with the given master key. Must be 64 hex characters.
     pub fn new(master: String) -> Result<Packet, SimpleSecretsError> {
         let master = master.to_ascii_u8();
-        let key_bytes = HEXLOWER_PERMISSIVE.decode(&master).map_err(|e| TextDecodingError("master key", e))?;
+        let key_bytes = HEXLOWER_PERMISSIVE.decode(&master)
+            .map_err(|e| TextDecodingError{ role: "master key", cause: e })?;
         if key_bytes.len() != 32 {
             return Err(InvalidKeyLength(key_bytes.len()))
         }
@@ -156,8 +157,8 @@ impl Packet {
         let key_id = primitives::identify(&self.master_key);
         if !primitives::compare(&key_id, &data[0..6]) {
             let expected = HEXLOWER_PERMISSIVE.encode(&key_id);
-            let found = HEXLOWER_PERMISSIVE.encode(&data[0..6]);
-            return Err(UnknownKey(found, expected))
+            let actual = HEXLOWER_PERMISSIVE.encode(&data[0..6]);
+            return Err(UnknownKey { expected_id: expected, actual_id: actual })
         }
         let mac_offset = data.len() - 32;
         let body = &data[0..mac_offset];

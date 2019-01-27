@@ -1,16 +1,18 @@
 
 # simple-secrets.rs [![Build Status](https://travis-ci.org/timshadel/simple-secrets.rs.png?branch=master)](https://travis-ci.org/timshadel/simple-secrets.rs)
 
-The Rust implementation of a simple, opinionated library for encrypting small packets of data securely. Designed for exchanging tokens among systems written in a variety of programming languages: [Node.js][simple-secrets], [Ruby][simple-secrets.rb], [Rust][simple-secrets.rs], [Objective-C][SimpleSecrets], [Java][simple-secrets.java], [Erlang][simple_secrets.erl].
+The Rust implementation of a simple, opinionated library for encrypting small packets of data securely. Designed for exchanging tokens among systems written in a variety of programming languages:
 
-[simple-secrets]: https://github.com/timshadel/simple-secrets
-[simple-secrets.rb]: https://github.com/timshadel/simple-secrets.rb
-[simple-secrets.rs]: https://github.com/timshadel/simple-secrets.rs
-[SimpleSecrets]: https://github.com/timshadel/SimpleSecrets
-[simple-secrets.java]: https://github.com/timshadel/simple-secrets.java
-[simple_secrets.erl]: https://github.com/CamShaft/simple_secrets.erl
+* [Node.js](https://github.com/timshadel/simple-secrets)
+* [Ruby](https://github.com/timshadel/simple-secrets.rb)
+* [Rust](https://github.com/timshadel/simple-secrets.rs)
+* [Objective-C](https://github.com/timshadel/SimpleSecrets)
+* [Java](https://github.com/timshadel/simple-secrets.java)
+* [Erlang](https://github.com/CamShaft/simple_secrets.erl)
 
 ## Examples
+
+[Rust API Documentation](https://docs.rs/simple-secrets/)
 
 ### Basic
 
@@ -46,7 +48,7 @@ let secret_message = sender.unpack(packet)?;
 
 ## Can you add ...
 
-This implementation follows [simple-secrets] for 100% compatibility.
+This implementation follows the spec for the [Node.js](https://github.com/timshadel/simple-secrets) version for 100% compatibility.
 
 ## License 
 

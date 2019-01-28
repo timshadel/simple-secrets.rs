@@ -1,8 +1,8 @@
 use ref_thread_local::*;
-use simple_secrets::Packet;
+use simple_secrets::Sender;
 
 ref_thread_local! {
-    static managed SENDER: Packet = Packet::new("eda00b0f46f6518d4c77944480a0b9b0a7314ad45e124521e490263c2ea217ad").unwrap();
+    static managed SENDER: Sender = Sender::new("eda00b0f46f6518d4c77944480a0b9b0a7314ad45e124521e490263c2ea217ad").unwrap();
 }
 
 pub fn test_unpack(token: String) -> bool {

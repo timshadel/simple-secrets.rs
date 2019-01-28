@@ -19,7 +19,7 @@ use zeroize::Zeroize;
 //
 
 /// Converts serializable data to and from websafe strings.
-pub struct Packet<E: Env = SecureEnv> {
+pub struct Sender<E: Env = SecureEnv> {
     /// Master key used in all operations
     master_key: MasterKey,
 
@@ -31,8 +31,8 @@ pub struct Packet<E: Env = SecureEnv> {
 // Public functions
 //
 
-impl Packet<SecureEnv> {
-    /// Construct a Packet with the given master key. Must be 64 hex characters.
+impl Sender<SecureEnv> {
+    /// Construct a Sender with the given master key. Must be 64 hex characters.
     ///
     /// # Errors
     ///
@@ -45,11 +45,11 @@ impl Packet<SecureEnv> {
     /// # Examples
     ///
     /// ```rust
-    /// use simple_secrets::Packet;
+    /// use simple_secrets::Sender;
     /// // Try `head /dev/urandom | shasum -a 256` to make a decent 256-bit key
     /// // 64-char hex string master key (32 bytes, 256 bits)
     /// let key = "eda00b0f46f6518d4c77944480a0b9b0a7314ad45e124521e490263c2ea217ad";
-    /// let sender = Packet::new(key).unwrap();
+    /// let sender = Sender::new(key).unwrap();
     /// ```
     ///
     /// [`TextDecodingError`]: enum.SimpleSecretsError.html#variant.TextDecodingError
@@ -59,15 +59,15 @@ impl Packet<SecureEnv> {
     }
 }
 
-impl<E: Env> Packet<E> {
-    /// Construct a Packet with the given master key and Env.
+impl<E: Env> Sender<E> {
+    /// Construct a Sender with the given master key and Env.
     pub fn with_env<K: AsRef<str>>(master: K, env: E) -> Result<Self, SimpleSecretsError> {
         let master_key = master.as_ref().parse()?;
         Ok(Self { master_key, env })
     }
 }
 
-impl<E: Env> Packet<E> {
+impl<E: Env> Sender<E> {
     /// Turn a Rust type into an encrypted packet. This object will
     /// possibly be deserialized in a different programming
     /// environment—it should be JSON-like in structure.
@@ -81,11 +81,11 @@ impl<E: Env> Packet<E> {
     /// # Examples
     ///
     /// ```rust
-    /// use simple_secrets::Packet;
+    /// use simple_secrets::Sender;
     /// // Try `head /dev/urandom | shasum -a 256` to make a decent 256-bit key
     /// // 64-char hex string master key (32 bytes, 256 bits)
     /// let key = "eda00b0f46f6518d4c77944480a0b9b0a7314ad45e124521e490263c2ea217ad";
-    /// let sender = Packet::new(key).unwrap();
+    /// let sender = Sender::new(key).unwrap();
     /// let packet = sender.pack("this is a secret message").unwrap();
     /// ```
     ///
@@ -112,12 +112,12 @@ impl<E: Env> Packet<E> {
     /// # Examples
     ///
     /// ```rust
-    /// use simple_secrets::Packet;
+    /// use simple_secrets::Sender;
     /// use std::collections::HashMap;
     /// // Try `head /dev/urandom | shasum -a 256` to make a decent 256-bit key
     /// // 64-char hex string master key (32 bytes, 256 bits)
     /// let key = "eda00b0f46f6518d4c77944480a0b9b0a7314ad45e124521e490263c2ea217ad";
-    /// let sender = Packet::new(key).unwrap();
+    /// let sender = Sender::new(key).unwrap();
     /// // Read data from somewhere
     /// let packet = "W7l1PJaffzMzIzzpI1hg75AubQ_PNSjEUycoH1Z7GEwonPVW7yPxFiG2Im\
     ///               V3GB2Hc31VDlX9KaxdK0mUdyBu5BnhraJ7s9ilG1cRUxGFCcPksnt_JDw";
@@ -160,7 +160,7 @@ impl<E: Env> Packet<E> {
 // Private functions
 //
 
-impl<E: Env> Packet<E> {
+impl<E: Env> Sender<E> {
     fn encrypt_body(&self, data: &mut [u8]) -> Result<Vec<u8>, SimpleSecretsError> {
         let mut iv = self.env.iv()?.into();
         let mut nonce = self.env.nonce()?.into();
@@ -178,10 +178,10 @@ impl<E: Env> Packet<E> {
     }
 }
 
-impl<E: Env> From<[u8; 32]> for Packet<E> {
-    /// Construct a Packet with the given 256-bit master key.
+impl<E: Env> From<[u8; 32]> for Sender<E> {
+    /// Construct a Sender with the given 256-bit master key.
     fn from(master_key: [u8; 32]) -> Self {
-        Packet {
+        Sender {
             master_key: master_key.into(),
             env: Env::new().unwrap(),
         }
@@ -201,7 +201,7 @@ mod tests {
         ($name:ident, $ty:ty) => {
             quickcheck! {
                 fn $name(expected: $ty) -> bool {
-                    let packet: Packet = [0x07; 32].into();
+                    let packet: Sender = [0x07; 32].into();
 
                     if let Ok(token) = packet.pack(&expected) {
                         packet.unpack(token).map(|actual: $ty| {
@@ -223,14 +223,14 @@ mod tests {
 
     quickcheck! {
         fn test_key_parse_no_crashes(key: String) -> bool {
-            let _ = Packet::new(key);
+            let _ = Sender::new(key);
             true
         }
     }
 
     quickcheck! {
         fn test_unpack_no_crashes(input: String) -> bool {
-            let packet: Packet = [0x07; 32].into();
+            let packet: Sender = [0x07; 32].into();
             let _ : Result<usize, _> = packet.unpack(input);
             true
         }
@@ -241,25 +241,25 @@ mod tests {
     fn it_should_accept_64char_hex() -> Result<(), SimpleSecretsError> {
         let key = [0xbc; 32];
         let hex = data_encoding::HEXLOWER_PERMISSIVE.encode(&key);
-        Packet::new(hex)?;
+        Sender::new(hex)?;
         Ok(())
     }
 
     #[test]
     #[should_panic]
     fn it_should_only_accept_hex() {
-        Packet::new("not-a-hex-string").unwrap();
+        Sender::new("not-a-hex-string").unwrap();
     }
 
     #[test]
     #[should_panic]
     fn it_should_only_accept_64char_hex() {
-        Packet::new("1dad").unwrap();
+        Sender::new("1dad").unwrap();
     }
 
     quickcheck! {
         fn test_websafe_strings(input: Vec<u8>) -> bool {
-            let packet: Packet = [0x07; 32].into();
+            let packet: Sender = [0x07; 32].into();
             let token = packet.pack(&input).unwrap();
             token.chars().all(|c| {
                 ('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z') || ('0' <= c && c <= '9') || c == '-' || c == '_'
@@ -269,8 +269,8 @@ mod tests {
 
     quickcheck! {
         fn test_different_packets(input: Vec<u8>) -> bool {
-            let a: Packet = [0x07; 32].into();
-            let b: Packet = [0x08; 32].into();
+            let a: Sender = [0x07; 32].into();
+            let b: Sender = [0x08; 32].into();
             let token = a.pack(&input).unwrap();
             b.unpack::<Vec<u8>, String>(token).is_err()
         }
@@ -310,9 +310,9 @@ mod compatibility {
         }
     }
 
-    fn compat_sender() -> Result<Packet<TestEnv>, SimpleSecretsError> {
+    fn compat_sender() -> Result<Sender<TestEnv>, SimpleSecretsError> {
         let key = "eda00b0f46f6518d4c77944480a0b9b0a7314ad45e124521e490263c2ea217ad";
-        Packet::with_env(key, TestEnv())
+        Sender::with_env(key, TestEnv())
     }
 
     mod string {

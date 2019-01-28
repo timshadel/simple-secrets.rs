@@ -1,4 +1,4 @@
-use simple_secrets::{Env, Packet, SimpleSecretsError};
+use simple_secrets::{Env, Sender as InnerSender, SimpleSecretsError};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(module = "./randombytes.js")]
@@ -35,14 +35,14 @@ impl Env for WasmEnv {
 }
 
 #[wasm_bindgen]
-pub struct Sender(Packet<WasmEnv>);
+pub struct Sender(InnerSender<WasmEnv>);
 
 #[wasm_bindgen]
 impl Sender {
     #[wasm_bindgen(constructor)]
     pub fn new(key: &str) -> Sender {
         Self(
-            Packet::with_env(key, WasmEnv())
+            InnerSender::with_env(key, WasmEnv())
                 .map_err(|e| e.to_string())
                 .unwrap(),
         )

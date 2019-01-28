@@ -12,7 +12,8 @@
     "build:node:bindgen": "wasm-bindgen ../target/wasm32-unknown-unknown/release/simple_secrets.wasm --nodejs --remove-name-section --out-dir node",
     "build:browser": "npm run build:browser:cp && npm run build:browser:bindgen",
     "build:browser:cp": "mkdir -p browser && cp src/index.js browser/index.js && cp src/randombytes.browser.js browser/randombytes.js",
-    "build:browser:bindgen": "wasm-bindgen ../target/wasm32-unknown-unknown/release/simple_secrets.wasm --remove-name-section --out-dir browser"
+    "build:browser:bindgen": "wasm-bindgen ../target/wasm32-unknown-unknown/release/simple_secrets.wasm --remove-name-section --out-dir browser",
+    "test": "jest"
   },
   "license": "MIT",
   "dependencies": {
@@ -21,6 +22,8 @@
   "devDependencies": {
     "@babel/cli": "^7.2.3",
     "@babel/core": "^7.2.2",
-    "@babel/preset-env": "^7.3.1"
+    "@babel/preset-env": "^7.3.1",
+    "jasmine-check": "^1.0.0-rc.0",
+    "jest": "^24.0.0"
   }
 }

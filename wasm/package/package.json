@@ -1,0 +1,26 @@
+{
+  "name": "simple-secrets",
+  "version": "1.0.0",
+  "description": "A simple, opinionated library for encrypting small packets of data securely.",
+  "main": "./node/index.js",
+  "module": "./browser/index.js",
+  "scripts": {
+    "build": "npm run build:wasm && npm run build:node && npm run build:browser",
+    "build:wasm": "cargo build --target wasm32-unknown-unknown --release",
+    "build:node": "npm run build:node:cp && npm run build:node:bindgen",
+    "build:node:cp": "mkdir -p node && babel src/index.js --out-file node/index.js && cp src/randombytes.node.js node/randombytes.js",
+    "build:node:bindgen": "wasm-bindgen ../target/wasm32-unknown-unknown/release/simple_secrets.wasm --nodejs --remove-name-section --out-dir node",
+    "build:browser": "npm run build:browser:cp && npm run build:browser:bindgen",
+    "build:browser:cp": "mkdir -p browser && cp src/index.js browser/index.js && cp src/randombytes.browser.js browser/randombytes.js",
+    "build:browser:bindgen": "wasm-bindgen ../target/wasm32-unknown-unknown/release/simple_secrets.wasm --remove-name-section --out-dir browser"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "msgpack": "^1.0.2"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.2.3",
+    "@babel/core": "^7.2.2",
+    "@babel/preset-env": "^7.3.1"
+  }
+}

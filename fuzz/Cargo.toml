@@ -32,4 +32,9 @@ name = "roundtrip"
 path = "fuzz_targets/roundtrip.rs"
 
 [profile.release]
-lto = true
+# lto = true
+debug-assertions = true
+codegen-units = 1
+incremental = false
+overflow-checks = true
+panic = "abort"

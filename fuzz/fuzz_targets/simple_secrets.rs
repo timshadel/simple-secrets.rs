@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use ref_thread_local::*;
 use simple_secrets::Sender;
 
@@ -9,9 +11,10 @@ pub fn test_unpack(token: String) -> bool {
     SENDER.borrow().unpack_raw(token).is_ok()
 }
 
-pub fn test_roundtrip(mut bytes: Vec<u8>) -> bool {
+pub fn test_roundtrip(bytes: Vec<u8>) -> bool {
     let sender = SENDER.borrow();
-    let token = sender.pack_raw(&mut bytes).unwrap();
-    sender.unpack_raw(token).unwrap();
+    let token = sender.pack_raw(&mut bytes.clone()).unwrap();
+    let actual = sender.unpack_raw(token).unwrap();
+    assert_eq!(bytes, actual);
     true
 }

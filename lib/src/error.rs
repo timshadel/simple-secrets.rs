@@ -41,7 +41,7 @@ pub enum SimpleSecretsError {
     /// The system's source of secure randomness is not available for use.
     /// Contains the underlying error.
     #[fail(display = "The is not ready to encrypt data.")]
-    RandomSourceUnavailable(rand_core::Error),
+    RandomSourceUnavailable(rand_os::rand_core::Error),
 
     /// The Rust data type could not be prepared for encryption by serializing it into bytes.
     /// Contains the underlying error.
@@ -132,8 +132,8 @@ impl From<rmp_serde::encode::Error> for SimpleSecretsError {
     }
 }
 
-impl From<rand_core::Error> for SimpleSecretsError {
-    fn from(err: rand_core::Error) -> Self {
+impl From<rand_os::rand_core::Error> for SimpleSecretsError {
+    fn from(err: rand_os::rand_core::Error) -> Self {
         SimpleSecretsError::RandomSourceUnavailable(err)
     }
 }

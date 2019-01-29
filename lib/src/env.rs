@@ -1,5 +1,5 @@
 use crate::error::SimpleSecretsError;
-use rand_core::RngCore;
+use rand_os::rand_core::RngCore;
 use rand_os::OsRng;
 use std::cell::RefCell;
 
@@ -13,7 +13,11 @@ pub struct SecureEnv(RefCell<OsRng>);
 
 impl Env for SecureEnv {
     fn new() -> Result<Self, SimpleSecretsError> {
-        Ok(Self(RefCell::new(OsRng::new()?)))
+        let r = OsRng::new();
+        match r {
+            Ok(rng) => Ok(Self(RefCell::new(rng))),
+            Err(e) => Err(SimpleSecretsError::RandomSourceUnavailable(e))
+        }        
     }
 
     fn iv(&self) -> Result<[u8; 16], SimpleSecretsError> {

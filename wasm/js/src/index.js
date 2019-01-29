@@ -7,7 +7,11 @@ export class Sender {
   }
 
   constructor(key) {
-    this._sender = new RawSender(key);
+    try {
+      this._sender = new RawSender(key);
+    } catch (msg) {
+      throw new Error(msg);
+    }
   }
 
   pack(value) {
@@ -15,7 +19,11 @@ export class Sender {
   }
 
   packRaw(value) {
-    return this._sender.pack(value);
+    try {
+      return this._sender.pack(value);
+    } catch (msg) {
+      throw new Error(msg);
+    }
   }
 
   unpack(value) {
@@ -23,6 +31,10 @@ export class Sender {
   }
 
   unpackRaw(value) {
-    return this._sender.unpack(value);
+    try {
+      return this._sender.unpack(value);
+    } catch (msg) {
+      throw new Error(msg);
+    }
   }
 };

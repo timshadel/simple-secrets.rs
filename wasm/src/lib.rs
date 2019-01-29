@@ -40,19 +40,17 @@ pub struct Sender(InnerSender<WasmEnv>);
 #[wasm_bindgen]
 impl Sender {
     #[wasm_bindgen(constructor)]
-    pub fn new(key: &str) -> Sender {
-        Self(
-            InnerSender::with_env(key, WasmEnv())
-                .map_err(|e| e.to_string())
-                .unwrap(),
-        )
+    pub fn new(key: &str) -> Result<Sender, JsValue> {
+        Ok(Self(
+            InnerSender::with_env(key, WasmEnv()).map_err(|e| e.to_string())?,
+        ))
     }
 
-    pub fn pack(&self, mut data: Vec<u8>) -> String {
-        self.0.pack_raw(&mut data).unwrap()
+    pub fn pack(&self, mut data: Vec<u8>) -> Result<String, JsValue> {
+        self.0.pack_raw(&mut data).map_err(|e| e.to_string().into())
     }
 
-    pub fn unpack(&self, data: String) -> Vec<u8> {
-        self.0.unpack_raw(data).unwrap()
+    pub fn unpack(&self, data: String) -> Result<Vec<u8>, JsValue> {
+        self.0.unpack_raw(data).map_err(|e| e.to_string().into())
     }
 }

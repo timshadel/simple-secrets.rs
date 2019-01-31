@@ -1,18 +1,12 @@
-[package]
-name = "simple-secrets"
-description = "A simple, opinionated library for encrypting small packets of data securely."
-repository = "https://github.com/timshadel/simple-secrets.rs"
-version = "0.1.1"
-authors = ["Tim Shadel <tim@daylogger.com>"]
-edition = "2018"
-license = "MIT OR Apache-2.0"
-readme = "README.md"
+[workspace]
+members = [
+    "bin",
+    "lib",
+    "wasm",
+]
 
-[dependencies]
-data-encoding = "^2.1.2"
-failure = "^0.1.5"
-rand = "^0.6"
-rmp-serde = "^0.13"
-rust-crypto = "^0.2"
-serde = "^1.0"
-serde_bytes = "^0.10"
+[profile.release]
+lto = true
+codegen-units = 1
+incremental = false
+panic = "abort"

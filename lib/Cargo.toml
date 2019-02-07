@@ -2,7 +2,7 @@
 name = "simple-secrets"
 description = "A simple, opinionated library for encrypting small packets of data securely."
 repository = "https://github.com/timshadel/simple-secrets.rs"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Tim Shadel <tim@daylogger.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"

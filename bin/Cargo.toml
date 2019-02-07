@@ -3,6 +3,7 @@ name = "secrets"
 description = "Encrypt small packets of data into websafe text."
 version = "0.2.0"
 authors = ["Tim Shadel <tim@daylogger.com>"]
+build = "build.rs"
 edition = "2018"
 
 [dependencies]

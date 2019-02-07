@@ -31,7 +31,7 @@ struct App {
     #[structopt(short = "a", long = "account")]
     key_account: Option<String>,
 
-    /// Operate in raw mode
+    /// Encrypt or decrypt input bytes directly, without expecting JSON
     #[structopt(short = "r", long = "raw")]
     raw: bool,
 
@@ -44,16 +44,16 @@ enum Command {
     /// Encrypt a JSON file to a websafe string
     #[structopt(name = "encrypt", author = "")]
     Encrypt {
-        /// JSON input file to encrypt
-        #[structopt(name = "INPUT")]
+        /// JSON input file to encrypt, "-" to read from STDIN
+        #[structopt(name = "json_file")]
         input: String,
     },
 
     /// Decrypt a websafe string into a JSON object
     #[structopt(name = "decrypt", author = "")]
     Decrypt {
-        /// Text file to decrypt
-        #[structopt(name = "INPUT")]
+        /// Text file to decrypt, "-" to read from STDIN
+        #[structopt(name = "websafe_text_file")]
         input: String,
     },
 }

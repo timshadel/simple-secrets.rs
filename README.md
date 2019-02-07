@@ -12,4 +12,5 @@ The Rust implementation of a simple, opinionated library for encrypting small pa
 ## How to Use It
 
 - [Rust Library](lib/)
+- [Web Assembly](wasm/)
 - [Command Line Tool](bin/)

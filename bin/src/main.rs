@@ -31,10 +31,6 @@ struct App {
     #[structopt(short = "a", long = "account")]
     key_account: Option<String>,
 
-    /// Encrypt or decrypt input bytes directly, without expecting JSON
-    #[structopt(short = "r", long = "raw")]
-    raw: bool,
-
     #[structopt(subcommand)]
     cmd: Command,
 }
@@ -44,6 +40,10 @@ enum Command {
     /// Encrypt a JSON file to a websafe string
     #[structopt(name = "encrypt", author = "")]
     Encrypt {
+        /// Encrypt input bytes directly, without expecting JSON
+        #[structopt(short = "r", long = "raw")]
+        raw: bool,
+
         /// JSON input file to encrypt, "-" to read from STDIN
         #[structopt(name = "json_file")]
         input: String,
@@ -52,6 +52,10 @@ enum Command {
     /// Decrypt a websafe string into a JSON object
     #[structopt(name = "decrypt", author = "")]
     Decrypt {
+        /// Decrypt directly to raw bytes, without interpreting as JSON
+        #[structopt(short = "r", long = "raw")]
+        raw: bool,
+
         /// Text file to decrypt, "-" to read from STDIN
         #[structopt(name = "websafe_text_file")]
         input: String,
@@ -63,8 +67,8 @@ fn main() -> Result<(), ExitFailure> {
     let sender = create_sender_from_keychain(&app)
         .unwrap_or_else(|| create_sender_from_env(&app.env_name))?;
     match app.cmd {
-        Command::Encrypt { input } => {
-            if app.raw {
+        Command::Encrypt { raw, input } => {
+            if raw {
                 let mut bytes = read_bytes(input)?;
                 println!("{}", sender.pack_raw(&mut bytes)?);
             } else {
@@ -72,10 +76,10 @@ fn main() -> Result<(), ExitFailure> {
                 println!("{}", sender.pack(&json)?);
             }
         }
-        Command::Decrypt { input } => {
+        Command::Decrypt { raw, input } => {
             let text = read_text(input)?;
             let text = text.trim();
-            if app.raw {
+            if raw {
                 let result = sender.unpack_raw(text)?;
                 std::io::stdout().write(&result)?;
             } else {

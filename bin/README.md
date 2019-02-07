@@ -23,17 +23,20 @@ $ secrets encrypt ./path/to/file.json
 $ secrets -e SECRET_KEY encrypt ./path/to/file.json
 ```
 
-## Help
+```sh
+# In ./export_key.sh
+export SECRET_KEY="some-64-character-hex-value"
+```
+
 
 ```
 Encrypt small packets of data into websafe text.
 
 USAGE:
-    secrets [FLAGS] [OPTIONS] <SUBCOMMAND>
+    secrets [OPTIONS] <SUBCOMMAND>
 
 FLAGS:
     -h, --help       Prints help information
-    -r, --raw        Encrypt or decrypt input bytes directly, without expecting JSON
     -V, --version    Prints version information
 
 OPTIONS:
@@ -50,14 +53,27 @@ SUBCOMMANDS:
 
 ### Encrypt JSON files
 
+*Encrypt a JSON file*
+
+```sh
+$ secrets encrypt ./path/to/file.json
+```
+
+*Encrypt non-JSON file*
+
+```sh
+$ secrets encrypt --raw ./path/to/file.xls
+```
+
 ```
 Encrypt a JSON file to a websafe string
 
 USAGE:
-    secrets encrypt <json_file>
+    secrets encrypt [FLAGS] <json_file>
 
 FLAGS:
     -h, --help       Prints help information
+    -r, --raw        Encrypt input bytes directly, without expecting JSON
     -V, --version    Prints version information
 
 ARGS:
@@ -66,14 +82,30 @@ ARGS:
 
 ## Decrypt websafe text
 
+*Decrypt a JSON file*
+
+```sh
+$ secrets decrypt ./path/to/file.txt
+{
+    "hello": "world"
+}
+```
+
+*Decrypt non-JSON file*
+
+```sh
+$ secrets decrypt --raw ./path/to/file.txt > ./my.xls
+```
+
 ```
 Decrypt a websafe string into a JSON object
 
 USAGE:
-    secrets decrypt <websafe_text_file>
+    secrets decrypt [FLAGS] <websafe_text_file>
 
 FLAGS:
     -h, --help       Prints help information
+    -r, --raw        Decrypt directly to raw bytes, without interpreting as JSON
     -V, --version    Prints version information
 
 ARGS:

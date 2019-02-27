@@ -6,6 +6,10 @@ authors = ["Tim Shadel <tim@daylogger.com>"]
 build = "build.rs"
 edition = "2018"
 
+[[bin]]
+name = "secrets"
+path = "src/main.rs"
+
 [dependencies]
 exitfailure = "^0.5.1"
 failure = "^0.1.5"
